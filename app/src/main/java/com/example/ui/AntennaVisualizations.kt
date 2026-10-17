@@ -2,13 +2,26 @@ package com.example.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -17,7 +30,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.example.domain.AntennaCalculationResult
 import com.example.domain.AntennaType
@@ -32,26 +47,79 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * 1. Interactive Vector CAD Blueprint Canvas showing the geometry, dimensions, feedpoint, and mast.
+ * 1. Interactive Vector CAD Blueprint Canvas showing the geometry, dimensions, feedpoint, and mast
+ * with pinch-to-zoom, drag-pan, and 2D rotation.
  */
 @Composable
 fun AntennaBlueprintCanvas(
     calc: AntennaCalculationResult,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(250.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF071120))
-            .padding(8.dp)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val cx = w / 2f
-            val cy = h / 2f
+    var scale2D by remember { mutableFloatStateOf(1f) }
+    var offsetX2D by remember { mutableFloatStateOf(0f) }
+    var offsetY2D by remember { mutableFloatStateOf(0f) }
+    var rotation2D by remember { mutableFloatStateOf(0f) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AssistChip(
+                onClick = { scale2D = (scale2D * 1.25f).coerceAtMost(3.5f) },
+                label = { Text("Зум +", style = MaterialTheme.typography.labelMedium) }
+            )
+            AssistChip(
+                onClick = { scale2D = (scale2D / 1.25f).coerceAtLeast(0.6f) },
+                label = { Text("Зум −", style = MaterialTheme.typography.labelMedium) }
+            )
+            AssistChip(
+                onClick = { rotation2D = (rotation2D + 90f) % 360f },
+                label = { Text("Повернуть 90°", style = MaterialTheme.typography.labelMedium) }
+            )
+            AssistChip(
+                onClick = {
+                    scale2D = 1f
+                    offsetX2D = 0f
+                    offsetY2D = 0f
+                    rotation2D = 0f
+                },
+                label = { Text("Сброс 2D", style = MaterialTheme.typography.labelMedium) }
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF071120))
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, rotation ->
+                        scale2D = (scale2D * zoom).coerceIn(0.6f, 3.5f)
+                        offsetX2D = (offsetX2D + pan.x).coerceIn(-size.width * 0.6f, size.width * 0.6f)
+                        offsetY2D = (offsetY2D + pan.y).coerceIn(-size.height * 0.6f, size.height * 0.6f)
+                        rotation2D = (rotation2D + rotation) % 360f
+                    }
+                }
+                .padding(8.dp)
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale2D,
+                        scaleY = scale2D,
+                        translationX = offsetX2D,
+                        translationY = offsetY2D,
+                        rotationZ = rotation2D
+                    )
+            ) {
+                val w = size.width
+                val h = size.height
+                val cx = w / 2f
+                val cy = h / 2f
 
             // Draw CAD engineering grid
             val gridStep = 28.dp.toPx()
@@ -86,29 +154,42 @@ fun AntennaBlueprintCanvas(
             }
 
             when (calc.antennaType) {
-                AntennaType.DIPOLE, AntennaType.T2FD_BEVERAGE -> {
-                    val span = w * 0.72f
+                AntennaType.DIPOLE, AntennaType.EFHW, AntennaType.OCFD_WINDOM, AntennaType.G5RV_ZS6BKW, AntennaType.T2FD_BEVERAGE -> {
+                    val span = w * 0.74f
                     val leftX = cx - span / 2f
                     val rightX = cx + span / 2f
-                    val wireY = cy - 22f
-
-                    // Mast & ground
-                    drawLine(Color(0xFF475569), Offset(cx, wireY + 12f), Offset(cx, h - 22f), strokeWidth = 4f, pathEffect = dash)
-                    drawLine(emerald, Offset(w * 0.15f, h - 20f), Offset(w * 0.85f, h - 20f), strokeWidth = 3f)
-
-                    // Left & Right Dipole Arms
-                    drawLine(cyan, Offset(leftX, wireY), Offset(cx - 12f, wireY), strokeWidth = 6f)
-                    drawLine(cyan, Offset(cx + 12f, wireY), Offset(rightX, wireY), strokeWidth = 6f)
-                    if (calc.antennaType == AntennaType.T2FD_BEVERAGE) {
-                        drawLine(cyan, Offset(leftX, wireY + 26f), Offset(rightX, wireY + 26f), strokeWidth = 4f)
-                        drawLine(cyan, Offset(leftX, wireY), Offset(leftX, wireY + 26f), strokeWidth = 4f)
-                        drawLine(cyan, Offset(rightX, wireY), Offset(rightX, wireY + 26f), strokeWidth = 4f)
+                    val wireY = cy - 24f
+                    val feedX = when (calc.antennaType) {
+                        AntennaType.EFHW -> leftX + 20f
+                        AntennaType.OCFD_WINDOM -> leftX + span * 0.33f
+                        else -> cx
                     }
-                    // Feedpoint Balun
-                    drawCircle(amber, radius = 9f, center = Offset(cx, wireY))
+
+                    // Mast & ground reflection plane
+                    drawLine(Color(0xFF475569), Offset(feedX, wireY + 10f), Offset(feedX, h - 22f), strokeWidth = 4f, pathEffect = dash)
+                    drawLine(emerald, Offset(w * 0.12f, h - 20f), Offset(w * 0.88f, h - 20f), strokeWidth = 3f)
+
+                    // Metallic radiator arms + ceramic end insulators
+                    drawLine(cyan, Offset(leftX, wireY), Offset(feedX - 10f, wireY), strokeWidth = 6.5f)
+                    drawLine(cyan, Offset(feedX + 10f, wireY), Offset(rightX, wireY), strokeWidth = 6.5f)
+                    drawCircle(Color.White, radius = 4.5f, center = Offset(leftX, wireY))
+                    drawCircle(Color.White, radius = 4.5f, center = Offset(rightX, wireY))
+
+                    if (calc.antennaType == AntennaType.T2FD_BEVERAGE) {
+                        drawLine(cyan, Offset(leftX, wireY + 26f), Offset(rightX, wireY + 26f), strokeWidth = 4.5f)
+                        drawLine(amber, Offset(leftX, wireY), Offset(leftX, wireY + 26f), strokeWidth = 4f)
+                        drawLine(amber, Offset(rightX, wireY), Offset(rightX, wireY + 26f), strokeWidth = 4f)
+                    } else if (calc.antennaType == AntennaType.G5RV_ZS6BKW) {
+                        // 450 Ohm ladder line
+                        drawLine(amber, Offset(cx - 7f, wireY), Offset(cx - 7f, wireY + 62f), strokeWidth = 3f)
+                        drawLine(amber, Offset(cx + 7f, wireY), Offset(cx + 7f, wireY + 62f), strokeWidth = 3f)
+                    }
+
+                    // Feedpoint Balun / UnUn
+                    drawCircle(amber, radius = 9f, center = Offset(feedX, wireY))
 
                     // Dimension arrow line above
-                    val dimY = wireY - 38f
+                    val dimY = wireY - 36f
                     drawLine(amber, Offset(leftX, dimY), Offset(rightX, dimY), strokeWidth = 2.5f)
                     drawLine(amber, Offset(leftX, dimY - 8f), Offset(leftX, wireY - 6f), strokeWidth = 2f)
                     drawLine(amber, Offset(rightX, dimY - 8f), Offset(rightX, wireY - 6f), strokeWidth = 2f)
@@ -116,45 +197,64 @@ fun AntennaBlueprintCanvas(
                     val totalLenStr = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
                     val armStr = calc.dimensions.getOrNull(1)?.formattedLength() ?: ""
                     drawContext.canvas.nativeCanvas.apply {
-                        drawText("L = $totalLenStr", cx - 110f, dimY - 10f, textPaint)
-                        drawText("Плечо L/2 = $armStr", leftX + 10f, wireY + 52f, subTextPaint)
-                        drawText("H = ${formatMetricLength(calc.mastHeightMeters)}", cx + 14f, h - 42f, subTextPaint)
+                        drawText("${calc.antennaType.code}: L = $totalLenStr", leftX + 8f, dimY - 10f, textPaint)
+                        drawText("Узел2: $armStr • H = ${formatMetricLength(calc.mastHeightMeters)}", leftX + 8f, h - 32f, subTextPaint)
                     }
                 }
 
-                AntennaType.GROUND_PLANE, AntennaType.J_POLE -> {
+                AntennaType.INVERTED_V, AntennaType.DELTA_LOOP -> {
+                    val apexY = 36f
+                    val baseLeftX = w * 0.16f
+                    val baseRightX = w * 0.84f
+                    val baseY = h - 38f
+                    drawLine(Color(0xFF475569), Offset(cx, apexY), Offset(cx, h - 18f), strokeWidth = 4.5f, pathEffect = dash)
+                    drawLine(cyan, Offset(cx, apexY), Offset(baseLeftX, baseY), strokeWidth = 6.5f)
+                    drawLine(cyan, Offset(cx, apexY), Offset(baseRightX, baseY), strokeWidth = 6.5f)
+                    if (calc.antennaType == AntennaType.DELTA_LOOP) {
+                        drawLine(cyan, Offset(baseLeftX, baseY), Offset(baseRightX, baseY), strokeWidth = 6f)
+                    }
+                    drawCircle(amber, radius = 9f, center = Offset(cx, apexY))
+                    val d0 = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
+                    drawContext.canvas.nativeCanvas.apply {
+                        drawText("${calc.antennaType.titleRu.take(22)}: $d0", 18f, 28f, textPaint)
+                        drawText("Мачта H = ${formatMetricLength(calc.mastHeightMeters)}", cx + 12f, h - 22f, subTextPaint)
+                    }
+                }
+
+                AntennaType.GROUND_PLANE, AntennaType.VERTICAL_5_8, AntennaType.COLLINEAR_COAX, AntennaType.J_POLE -> {
                     val baseX = cx
-                    val baseY = cy + 28f
-                    val topY = 34f
-                    // Vertical radiator
-                    drawLine(cyan, Offset(baseX, topY), Offset(baseX, baseY), strokeWidth = 7f)
-                    if (calc.antennaType == AntennaType.GROUND_PLANE) {
-                        // 4 Radials at 135 deg
-                        drawLine(amber, Offset(baseX, baseY), Offset(baseX - w * 0.28f, h - 22f), strokeWidth = 5f)
-                        drawLine(amber, Offset(baseX, baseY), Offset(baseX + w * 0.28f, h - 22f), strokeWidth = 5f)
-                        drawLine(amber, Offset(baseX, baseY), Offset(baseX - w * 0.14f, h - 16f), strokeWidth = 3.5f)
-                        drawLine(amber, Offset(baseX, baseY), Offset(baseX + w * 0.14f, h - 16f), strokeWidth = 3.5f)
-                    } else {
-                        // J-Pole 1/4 wave matching stub
+                    val baseY = cy + 32f
+                    val topY = 28f
+                    drawLine(cyan, Offset(baseX, topY), Offset(baseX, baseY), strokeWidth = 7.5f)
+                    if (calc.antennaType == AntennaType.J_POLE) {
                         val stubX = baseX + 42f
                         val stubTopY = baseY - (baseY - topY) * 0.35f
                         drawLine(amber, Offset(stubX, stubTopY), Offset(stubX, baseY), strokeWidth = 6f)
                         drawLine(amber, Offset(baseX, baseY), Offset(stubX, baseY), strokeWidth = 6f)
+                    } else {
+                        drawLine(amber, Offset(baseX, baseY), Offset(baseX - w * 0.28f, h - 20f), strokeWidth = 5f)
+                        drawLine(amber, Offset(baseX, baseY), Offset(baseX + w * 0.28f, h - 20f), strokeWidth = 5f)
+                        drawLine(amber, Offset(baseX, baseY), Offset(baseX - w * 0.14f, h - 14f), strokeWidth = 3.5f)
+                        drawLine(amber, Offset(baseX, baseY), Offset(baseX + w * 0.14f, h - 14f), strokeWidth = 3.5f)
+                        if (calc.antennaType == AntennaType.COLLINEAR_COAX) {
+                            drawCircle(amber, radius = 6f, center = Offset(baseX, (topY + baseY) * 0.42f))
+                            drawCircle(amber, radius = 6f, center = Offset(baseX, (topY + baseY) * 0.72f))
+                        }
                     }
-                    drawCircle(emerald, radius = 8f, center = Offset(baseX, baseY))
+                    drawCircle(emerald, radius = 8.5f, center = Offset(baseX, baseY))
                     val mainLen = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
                     val subLen = calc.dimensions.getOrNull(1)?.formattedLength() ?: ""
                     drawContext.canvas.nativeCanvas.apply {
-                        drawText("Излучатель: $mainLen", baseX + 20f, topY + 35f, textPaint)
-                        drawText("Противовес/шлейф: $subLen (135°)", baseX - 180f, h - 26f, subTextPaint)
+                        drawText("Штырь: $mainLen", baseX + 18f, topY + 32f, textPaint)
+                        drawText("Радиалы/шлейф: $subLen", 18f, h - 24f, subTextPaint)
                     }
                 }
 
-                AntennaType.YAGI, AntennaType.LPDA -> {
+                AntennaType.YAGI, AntennaType.LPDA, AntennaType.HB9CV -> {
                     val boomLeft = w * 0.12f
                     val boomRight = w * 0.88f
-                    drawLine(amber, Offset(boomLeft, cy), Offset(boomRight, cy), strokeWidth = 5f)
-                    val elems = calc.dimensions.filter { it.code != "BOOM" }
+                    drawLine(amber, Offset(boomLeft, cy), Offset(boomRight, cy), strokeWidth = 5.5f)
+                    val elems = calc.dimensions.filter { !it.code.contains("BOOM") }
                     val n = elems.size.coerceAtLeast(2)
                     elems.forEachIndexed { idx, item ->
                         val x = boomLeft + (boomRight - boomLeft) * (idx.toFloat() / (n - 1).coerceAtLeast(1))
@@ -170,78 +270,112 @@ fun AntennaBlueprintCanvas(
                     }
                     val boomDim = calc.dimensions.lastOrNull()?.formattedLength() ?: ""
                     drawContext.canvas.nativeCanvas.drawText(
-                        "Траверса (Бум): $boomDim • Элементов: $n",
+                        "Бум: $boomDim • Элементов: $n",
                         boomLeft,
                         h - 16f,
                         textPaint
                     )
                 }
 
-                AntennaType.DISCONE -> {
-                    val apexY = cy - 28f
-                    val discHalf = w * 0.22f
-                    // Upper disc
-                    drawLine(cyan, Offset(cx - discHalf, apexY - 8f), Offset(cx + discHalf, apexY - 8f), strokeWidth = 6f)
-                    // Lower cone skirt
+                AntennaType.MOXON, AntennaType.HEXBEAM, AntennaType.SPIDERBEAM -> {
+                    val rectW = w * 0.56f
+                    val rectH = h * 0.48f
+                    val left = cx - rectW / 2f
+                    val right = cx + rectW / 2f
+                    val top = cy - rectH / 2f
+                    val bot = cy + rectH / 2f
+                    // Driven element (top) with inward tails
+                    drawLine(cyan, Offset(left, top), Offset(right, top), strokeWidth = 6.5f)
+                    drawLine(cyan, Offset(left, top), Offset(left, cy - 12f), strokeWidth = 5.5f)
+                    drawLine(cyan, Offset(right, top), Offset(right, cy - 12f), strokeWidth = 5.5f)
+                    // Reflector element (bottom) with upward tails
+                    drawLine(amber, Offset(left, bot), Offset(right, bot), strokeWidth = 6f)
+                    drawLine(amber, Offset(left, bot), Offset(left, cy + 12f), strokeWidth = 5f)
+                    drawLine(amber, Offset(right, bot), Offset(right, cy + 12f), strokeWidth = 5f)
+                    drawCircle(emerald, radius = 8f, center = Offset(cx, top))
+                    val d0 = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
+                    drawContext.canvas.nativeCanvas.drawText("${calc.antennaType.titleRu.take(22)}: $d0", 18f, h - 16f, textPaint)
+                }
+
+                AntennaType.DISCONE, AntennaType.BICONE_BOWTIE -> {
+                    val apexY = cy - 22f
+                    val discHalf = w * 0.24f
+                    if (calc.antennaType == AntennaType.BICONE_BOWTIE) {
+                        drawLine(cyan, Offset(cx, apexY - 6f), Offset(cx - discHalf, 26f), strokeWidth = 5.5f)
+                        drawLine(cyan, Offset(cx, apexY - 6f), Offset(cx + discHalf, 26f), strokeWidth = 5.5f)
+                        drawLine(cyan, Offset(cx - discHalf, 26f), Offset(cx + discHalf, 26f), strokeWidth = 2.5f, pathEffect = dash)
+                    } else {
+                        drawLine(cyan, Offset(cx - discHalf, apexY - 8f), Offset(cx + discHalf, apexY - 8f), strokeWidth = 6.5f)
+                    }
                     val coneHalf = w * 0.32f
                     val coneBotY = h - 28f
-                    drawLine(amber, Offset(cx, apexY), Offset(cx - coneHalf, coneBotY), strokeWidth = 5f)
-                    drawLine(amber, Offset(cx, apexY), Offset(cx + coneHalf, coneBotY), strokeWidth = 5f)
-                    drawLine(amber, Offset(cx, apexY), Offset(cx - coneHalf * 0.45f, coneBotY), strokeWidth = 3f)
-                    drawLine(amber, Offset(cx, apexY), Offset(cx + coneHalf * 0.45f, coneBotY), strokeWidth = 3f)
+                    drawLine(amber, Offset(cx, apexY), Offset(cx - coneHalf, coneBotY), strokeWidth = 5.5f)
+                    drawLine(amber, Offset(cx, apexY), Offset(cx + coneHalf, coneBotY), strokeWidth = 5.5f)
+                    drawLine(amber, Offset(cx, apexY), Offset(cx - coneHalf * 0.45f, coneBotY), strokeWidth = 3.5f)
+                    drawLine(amber, Offset(cx, apexY), Offset(cx + coneHalf * 0.45f, coneBotY), strokeWidth = 3.5f)
                     drawLine(amber, Offset(cx - coneHalf, coneBotY), Offset(cx + coneHalf, coneBotY), strokeWidth = 2f, pathEffect = dash)
                     val dDisc = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
                     val lCone = calc.dimensions.getOrNull(1)?.formattedLength() ?: ""
                     drawContext.canvas.nativeCanvas.apply {
-                        drawText("Диск D = $dDisc", cx - 95f, apexY - 22f, textPaint)
-                        drawText("Конус L = $lCone (60°)", cx - 105f, coneBotY + 20f, subTextPaint)
+                        drawText("Верх: $dDisc", 18f, 32f, textPaint)
+                        drawText("Конус L = $lCone", 18f, h - 16f, subTextPaint)
                     }
                 }
 
-                AntennaType.MAG_LOOP -> {
+                AntennaType.MAG_LOOP, AntennaType.FRACTAL_KOCH -> {
                     val outerR = min(w, h) * 0.34f
                     val innerR = outerR * 0.25f
                     drawCircle(cyan, radius = outerR, center = Offset(cx, cy), style = Stroke(width = 7f))
                     drawCircle(amber, radius = innerR, center = Offset(cx, cy + outerR - innerR - 6f), style = Stroke(width = 4.5f))
-                    // Tuning capacitor at top
                     drawRect(
                         color = emerald,
                         topLeft = Offset(cx - 18f, cy - outerR - 10f),
                         size = Size(36f, 20f)
                     )
                     val dLoop = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
-                    val capStr = String.format("КПЕ: %.1f пФ (%.0f В)", calc.tuningCapacitorPf ?: 0.0, calc.loopCapacitorVoltageV ?: 0.0)
+                    val capStr = if (calc.tuningCapacitorPf != null) {
+                        String.format("КПЕ: %.1f пФ (%.0f В)", calc.tuningCapacitorPf, calc.loopCapacitorVoltageV ?: 0.0)
+                    } else {
+                        calc.dimensions.getOrNull(1)?.formattedLength() ?: ""
+                    }
                     drawContext.canvas.nativeCanvas.apply {
-                        drawText("Рамка D = $dLoop", 18f, 34f, textPaint)
+                        drawText("${calc.antennaType.code}: $dLoop", 18f, 34f, textPaint)
                         drawText(capStr, 18f, h - 18f, subTextPaint)
                     }
                 }
 
-                AntennaType.CUBICAL_QUAD, AntennaType.HELICAL_PATCH -> {
+                AntennaType.CUBICAL_QUAD, AntennaType.QFH_SATELLITE, AntennaType.HELICAL_PATCH, AntennaType.HORN_SHF, AntennaType.PARABOLIC_DISH -> {
                     val boxSize = min(w, h) * 0.56f
-                    // Rear reflector quad
-                    drawRect(
-                        color = amber,
-                        topLeft = Offset(cx - boxSize * 0.58f, cy - boxSize * 0.52f),
-                        size = Size(boxSize, boxSize),
-                        style = Stroke(width = 4f)
-                    )
-                    // Front driven quad
-                    drawRect(
-                        color = cyan,
-                        topLeft = Offset(cx - boxSize * 0.38f, cy - boxSize * 0.38f),
-                        size = Size(boxSize * 0.92f, boxSize * 0.92f),
-                        style = Stroke(width = 6f)
-                    )
+                    if (calc.antennaType == AntennaType.PARABOLIC_DISH) {
+                        drawCircle(amber, radius = boxSize * 0.65f, center = Offset(cx, cy), style = Stroke(width = 5f))
+                        drawCircle(cyan, radius = 10f, center = Offset(cx, cy))
+                        drawLine(emerald, Offset(cx - boxSize * 0.5f, cy - boxSize * 0.4f), Offset(cx, cy), strokeWidth = 3f)
+                        drawLine(emerald, Offset(cx + boxSize * 0.5f, cy - boxSize * 0.4f), Offset(cx, cy), strokeWidth = 3f)
+                        drawLine(emerald, Offset(cx, cy + boxSize * 0.62f), Offset(cx, cy), strokeWidth = 3f)
+                    } else {
+                        drawRect(
+                            color = amber,
+                            topLeft = Offset(cx - boxSize * 0.58f, cy - boxSize * 0.52f),
+                            size = Size(boxSize, boxSize),
+                            style = Stroke(width = 4f)
+                        )
+                        drawRect(
+                            color = cyan,
+                            topLeft = Offset(cx - boxSize * 0.38f, cy - boxSize * 0.38f),
+                            size = Size(boxSize * 0.92f, boxSize * 0.92f),
+                            style = Stroke(width = 6f)
+                        )
+                    }
                     val p0 = calc.dimensions.firstOrNull()?.formattedLength() ?: ""
                     drawContext.canvas.nativeCanvas.drawText(
-                        "${calc.antennaType.titleRu.take(24)}: $p0",
+                        "${calc.antennaType.titleRu.take(26)}: $p0",
                         18f,
                         h - 16f,
                         textPaint
                     )
                 }
             }
+        }
         }
     }
 }

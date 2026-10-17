@@ -9,6 +9,7 @@ import com.example.data.CustomPluginDoc
 import com.example.data.RfCloudRepository
 import com.example.data.VnaMeasurementDoc
 import com.example.domain.AntennaCalculationResult
+import com.example.domain.AntennaGeneticSynthesizer
 import com.example.domain.AntennaPhysicsEngine
 import com.example.domain.AntennaType
 import com.example.domain.BUILTIN_COAX_CABLES
@@ -21,6 +22,8 @@ import com.example.domain.PluginEngine
 import com.example.domain.PluginExecutionOutput
 import com.example.domain.RadioReceiverProfile
 import com.example.domain.SdrSpectrumFrame
+import com.example.domain.SynthesisGoal
+import com.example.domain.SynthesizedAntennaBlueprint
 import com.example.domain.VnaOptimizationResult
 import com.example.domain.VnaOptimizerEngine
 import com.example.domain.formatFrequencyDisplay
@@ -168,6 +171,17 @@ class RfLabViewModel(
 
     private val _calculationResult = MutableStateFlow(recalculateInternal())
     val calculationResult: StateFlow<AntennaCalculationResult> = _calculationResult.asStateFlow()
+
+    // --- 1B. Evolutionary / Genetic Antenna Topology Generator State ---
+    private val _synthesisGoal = MutableStateFlow(SynthesisGoal.MAX_DX_GAIN)
+    val synthesisGoal: StateFlow<SynthesisGoal> = _synthesisGoal.asStateFlow()
+
+    private val _maxSpanLimitMeters = MutableStateFlow(10.0)
+    val maxSpanLimitMeters: StateFlow<Double> = _maxSpanLimitMeters.asStateFlow()
+
+    private var synthesisSeedCounter = 1
+    private val _synthesizedBlueprint = MutableStateFlow<SynthesizedAntennaBlueprint?>(null)
+    val synthesizedBlueprint: StateFlow<SynthesizedAntennaBlueprint?> = _synthesizedBlueprint.asStateFlow()
 
     // --- 2. VNA Modeling & Auto-Optimizer State ---
     private val _measuredResonanceMhz = MutableStateFlow(13.920)
@@ -324,14 +338,45 @@ class RfLabViewModel(
         _selectedAntennaType.value = type
         _elementCount.value = type.defaultElements
         _lengthScaleOverride.value = 1.0
+        _synthesizedBlueprint.value = null
         if (_frequencyMhz.value < type.minFreqMhz || _frequencyMhz.value > type.maxFreqMhz) {
             _frequencyMhz.value = when (type) {
-                AntennaType.DISCONE -> 145.50
-                AntennaType.HELICAL_PATCH -> 1296.0
+                AntennaType.DISCONE, AntennaType.COLLINEAR_COAX, AntennaType.QFH_SATELLITE -> 145.50
+                AntennaType.HELICAL_PATCH, AntennaType.HORN_SHF, AntennaType.PARABOLIC_DISH -> 1296.0
                 else -> 14.175
             }
         }
         recalculateAll()
+    }
+
+    fun updateSynthesisConfig(goal: SynthesisGoal, maxSpanM: Double) {
+        _synthesisGoal.value = goal
+        _maxSpanLimitMeters.value = maxSpanM.coerceIn(0.15, 250.0)
+    }
+
+    fun synthesizeNewAntennaTopology() {
+        synthesisSeedCounter++
+        val synth = AntennaGeneticSynthesizer.synthesizeOptimalAntenna(
+            frequencyMhz = _frequencyMhz.value,
+            maxSpanMeters = _maxSpanLimitMeters.value,
+            mastHeightMeters = _mastHeightMeters.value,
+            goal = _synthesisGoal.value,
+            seedVariation = synthesisSeedCounter
+        )
+        _synthesizedBlueprint.value = synth
+        _statusMessage.value = "Синтезирована 3D-топология «${synth.designNameRu}» (G=${String.format("%.2f", synth.predictedGainDbi)} dBi, КСВ=${String.format("%.2f", synth.predictedSwr50)})"
+    }
+
+    fun clearSynthesizedBlueprint() {
+        _synthesizedBlueprint.value = null
+    }
+
+    fun saveSynthesizedBlueprintToProfiles() {
+        val synth = _synthesizedBlueprint.value ?: return
+        saveCurrentProfileToCloud(
+            customName = "${synth.designNameRu} (${formatFrequencyDisplay(synth.frequencyMhz)})",
+            customNotes = "${synth.engineeringSummaryRu} | ${synth.matchingNetworkRu}"
+        )
     }
 
     fun applyBandPreset(freqMhz: Double) {

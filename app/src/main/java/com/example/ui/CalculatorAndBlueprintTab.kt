@@ -17,11 +17,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -39,38 +42,70 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.domain.ALL_BAND_PRESETS
 import com.example.domain.AntennaCalculationResult
+import com.example.domain.AntennaCategory
+import com.example.domain.AntennaPhysicsEngine
 import com.example.domain.AntennaType
+import com.example.domain.SynthesisGoal
+import com.example.domain.SynthesizedAntennaBlueprint
 import com.example.domain.formatFrequencyDisplay
 import com.example.domain.formatMetricLength
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CalculatorAndBlueprintTab(
     calc: AntennaCalculationResult,
+    synthesisGoal: SynthesisGoal,
+    maxSpanLimitMeters: Double,
+    synthesizedBlueprint: SynthesizedAntennaBlueprint?,
     onSelectAntennaType: (AntennaType) -> Unit,
     onApplyBandPreset: (Double) -> Unit,
     onUpdateParameters: (Double, Double, Double, Double, Int, Double, Double) -> Unit,
+    onUpdateSynthesisConfig: (SynthesisGoal, Double) -> Unit,
+    onSynthesizeNewTopology: () -> Unit,
+    onClearSynthesizedBlueprint: () -> Unit,
+    onSaveSynthesizedToProfiles: () -> Unit,
     onExportPdf: () -> Unit,
     onSaveProfileToCloud: (String, String) -> Unit
 ) {
-    val context = LocalContext.current
+    var selectedCategory by remember { mutableStateOf<AntennaCategory?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var is3DBlueprintMode by remember { mutableStateOf(true) }
+
     var freqInput by remember(calc.frequencyMhz) { mutableStateOf(calc.frequencyMhz.toString()) }
     var wireInput by remember(calc.wireDiameterMm) { mutableStateOf(calc.wireDiameterMm.toString()) }
     var mastInput by remember(calc.mastHeightMeters) { mutableStateOf(calc.mastHeightMeters.toString()) }
     var vfInput by remember(calc.velocityFactor) { mutableStateOf(calc.velocityFactor.toString()) }
+    var powerInput by remember(calc.txPowerWatts) { mutableStateOf(calc.txPowerWatts.toInt().toString()) }
     var profileNameInput by remember { mutableStateOf("") }
+
+    // Interactive Wheeler Coil & RF Safety Calculator state
+    var customCoilUh by remember { mutableFloatStateOf(18.5f) }
+    var customCoilDiamMm by remember { mutableFloatStateOf(40f) }
+
+    val filteredAntennas = remember(selectedCategory, searchQuery) {
+        AntennaType.entries.filter { type ->
+            val matchesCat = selectedCategory == null || type.category == selectedCategory
+            val matchesQuery = searchQuery.isBlank() ||
+                type.titleRu.contains(searchQuery, ignoreCase = true) ||
+                type.subtitleRu.contains(searchQuery, ignoreCase = true) ||
+                type.code.contains(searchQuery, ignoreCase = true)
+            matchesCat && matchesQuery
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -79,7 +114,7 @@ fun CalculatorAndBlueprintTab(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Antenna Topology Selector (Standard, Directional, All-Wave, Magnetic Loop / SHF)
+        // 1. Antenna Topology Selector (26 Antenna Types across 6 Categories + Search)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -87,19 +122,57 @@ fun CalculatorAndBlueprintTab(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "1. Тип антенны (Резонансные, Направленные и Всеволновые)",
+                    text = "1. Каталог антенн (${AntennaType.entries.size} типов: КВ, УКВ, СВЧ, Всеволновые)",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Category Filter Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedCategory == null,
+                        onClick = { selectedCategory = null },
+                        label = { Text("Все (${AntennaType.entries.size})", style = MaterialTheme.typography.labelMedium) },
+                        modifier = Modifier.testTag("cat_filter_ALL")
+                    )
+                    AntennaCategory.entries.forEach { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = if (selectedCategory == cat) null else cat },
+                            label = { Text(cat.titleRu, style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.testTag("cat_filter_${cat.name}")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Поиск антенны (Яги, Моксон, QFH, Windom, Ромб, Бевередж...)") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("input_antenna_search"),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    AntennaType.entries.forEach { type ->
-                        val selected = type == calc.antennaType
+                    filteredAntennas.forEach { type ->
+                        val selected = type == calc.antennaType && synthesizedBlueprint == null
                         FilterChip(
                             selected = selected,
                             onClick = { onSelectAntennaType(type) },
@@ -119,7 +192,7 @@ fun CalculatorAndBlueprintTab(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = calc.antennaType.subtitleRu,
+                    text = "${calc.antennaType.category.titleRu} • ${calc.antennaType.subtitleRu}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -271,15 +344,23 @@ fun CalculatorAndBlueprintTab(
                     )
                 }
 
-                if (calc.antennaType in listOf(AntennaType.YAGI, AntennaType.LPDA, AntennaType.CUBICAL_QUAD, AntennaType.HELICAL_PATCH)) {
+                if (calc.antennaType in listOf(
+                        AntennaType.YAGI,
+                        AntennaType.LPDA,
+                        AntennaType.CUBICAL_QUAD,
+                        AntennaType.COLLINEAR_COAX,
+                        AntennaType.HELICAL_PATCH,
+                        AntennaType.SPIDERBEAM
+                    )
+                ) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Число элементов / витков антенны: ${calc.elementCount} шт.",
+                        text = "Число элементов / секций / витков антенны: ${calc.elementCount} шт.",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.secondary
                     )
                     Slider(
-                        value = calc.elementCount.toFloat(),
+                        value = calc.elementCount.toFloat().coerceIn(2f, 15f),
                         onValueChange = { v ->
                             onUpdateParameters(
                                 calc.frequencyMhz,
@@ -353,33 +434,70 @@ fun CalculatorAndBlueprintTab(
             }
         }
 
-        // 4. Interactive Vector CAD Blueprint & Dimension Table
+        // 4. Interactive 3D CAD Viewport (360° Orbit / Tilt / Zoom) & 2D ГОСТ Blueprint
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Straighten,
-                        contentDescription = "Blueprint",
-                        tint = MaterialTheme.colorScheme.primary
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = if (is3DBlueprintMode) Icons.Default.ViewInAr else Icons.Default.Straighten,
+                            contentDescription = "3D CAD Blueprint",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "3. Интерактивный 3D-чертёж и спецификация размеров",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Toggle between 3D Interactive CAD and 2D Dimensional Schematic
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = is3DBlueprintMode,
+                        onClick = { is3DBlueprintMode = true },
+                        label = { Text("3D САПР-модель (вращение 360°)", fontWeight = FontWeight.Bold) },
+                        modifier = Modifier.testTag("toggle_3d_mode_chip")
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "3. Сборочный чертёж и спецификация размеров",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                    FilterChip(
+                        selected = !is3DBlueprintMode,
+                        onClick = { is3DBlueprintMode = false },
+                        label = { Text("2D Сборочный эскиз ГОСТ") },
+                        modifier = Modifier.testTag("toggle_2d_mode_chip")
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
 
-                AntennaBlueprintCanvas(calc = calc)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (is3DBlueprintMode) {
+                    Interactive3DAntennaViewport(
+                        calc = calc,
+                        customSegmentsOverride = synthesizedBlueprint?.segments3D,
+                        customTitleOverride = synthesizedBlueprint?.designNameRu
+                    )
+                } else {
+                    AntennaBlueprintCanvas(calc = calc)
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                calc.dimensions.forEach { dim ->
+                val activeDimensions = synthesizedBlueprint?.dimensions ?: calc.dimensions
+                activeDimensions.forEach { dim ->
                     Column(modifier = Modifier.padding(vertical = 5.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -399,7 +517,7 @@ fun CalculatorAndBlueprintTab(
                             )
                         }
                         if (dim.noteRu.isNotEmpty() || dim.positionMeters > 0.0) {
-                            val posText = if (dim.positionMeters > 0.0) "Позиция на буме: ${dim.formattedPosition()} • " else ""
+                            val posText = if (dim.positionMeters > 0.0) "Позиция: ${dim.formattedPosition()} • " else ""
                             Text(
                                 text = "$posText${dim.noteRu}",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -412,7 +530,158 @@ fun CalculatorAndBlueprintTab(
             }
         }
 
-        // 5. Physics Explanation & Step-by-Step Assembly Instructions
+        // 5. Evolutionary / Genetic Generator of New Antenna Topologies
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "Antenna Synthesizer",
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "4. Генератор новых видов антенн (Генетический синтез)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Создаёт новые гибридные 3D-топологии антенн под вашу частоту и габаритные ограничения для достижения максимального усиления, компактности или широкополосности.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SynthesisGoal.entries.forEach { goal ->
+                        FilterChip(
+                            selected = synthesisGoal == goal,
+                            onClick = { onUpdateSynthesisConfig(goal, maxSpanLimitMeters) },
+                            label = { Text(goal.titleRu, style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.testTag("synth_goal_${goal.id}")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Макс. допустимый габарит (размах): ${formatMetricLength(maxSpanLimitMeters)}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Slider(
+                    value = maxSpanLimitMeters.toFloat().coerceIn(0.5f, 60f),
+                    onValueChange = { onUpdateSynthesisConfig(synthesisGoal, it.toDouble()) },
+                    valueRange = 0.5f..60f,
+                    modifier = Modifier.testTag("slider_synth_max_span")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            is3DBlueprintMode = true
+                            onSynthesizeNewTopology()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("synthesize_antenna_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
+                        )
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = "Synthesize")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Синтезировать антенну", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (synthesizedBlueprint != null) {
+                        OutlinedButton(
+                            onClick = onClearSynthesizedBlueprint,
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("reset_synth_button")
+                        ) {
+                            Text("Сброс к стандарту")
+                        }
+                    }
+                }
+
+                if (synthesizedBlueprint != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "Синтезирована: ${synthesizedBlueprint.designNameRu}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = String.format(
+                                    "Поколений: %d • Рейтинг: %.1f/100 • Усиление: %.2f dBi • F/B: %.1f дБ • КСВ: %.2f • Полоса: %.1f%%",
+                                    synthesizedBlueprint.generationsEvolved,
+                                    synthesizedBlueprint.fitnessScore,
+                                    synthesizedBlueprint.predictedGainDbi,
+                                    synthesizedBlueprint.predictedFbDb,
+                                    synthesizedBlueprint.predictedSwr50,
+                                    synthesizedBlueprint.bandwidthSwr2Percent
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = synthesizedBlueprint.engineeringSummaryRu,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Согласование: ${synthesizedBlueprint.matchingNetworkRu}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = onSaveSynthesizedToProfiles,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("save_synthesized_profile_button")
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = "Save Synthesized")
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Сохранить синтезированную антенну в профили")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Physics Explanation & Step-by-Step Assembly Instructions
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -427,7 +696,7 @@ fun CalculatorAndBlueprintTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "4. Физическое описание и схема согласования",
+                        text = "5. Физическое описание и схема согласования",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -454,7 +723,7 @@ fun CalculatorAndBlueprintTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "5. Пошаговая инструкция по сборке и настройке",
+                        text = "6. Пошаговая инструкция по сборке и настройке",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -471,7 +740,101 @@ fun CalculatorAndBlueprintTab(
             }
         }
 
-        // 6. Export to PDF & Save to Cloud Action Row
+        // 7. Extra Radio Engineering Toolkit: Wheeler Coil Calculator, Wind Survival & RF Safety Distance
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Engineering,
+                        contentDescription = "Engineering Toolkit",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "7. Конструктор катушек Уилера, Ветровая нагрузка и ВЧ-безопасность",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = String.format(
+                        "Индуктивность катушки L = %.1f мкГн на каркасе Ø %.0f мм:",
+                        customCoilUh,
+                        customCoilDiamMm
+                    ),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Slider(
+                    value = customCoilUh,
+                    onValueChange = { customCoilUh = it },
+                    valueRange = 0.5f..120f,
+                    modifier = Modifier.testTag("slider_wheeler_uh")
+                )
+                Text(
+                    text = "Расчёт намотки: ${AntennaPhysicsEngine.buildWheelersCoilHint(customCoilUh.toDouble(), customCoilDiamMm.toDouble())}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = powerInput,
+                        onValueChange = { str ->
+                            powerInput = str
+                            str.toDoubleOrNull()?.let { p ->
+                                onUpdateParameters(
+                                    calc.frequencyMhz,
+                                    calc.upperFreqMhz,
+                                    calc.wireDiameterMm,
+                                    calc.mastHeightMeters,
+                                    calc.elementCount,
+                                    calc.velocityFactor,
+                                    p
+                                )
+                            }
+                        },
+                        label = { Text("Мощность передатчика P (Вт)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_tx_power_watts"),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                val eirpWatts = calc.txPowerWatts * 10.0.pow((calc.gainDbi - 2.15) / 10.0)
+                val safeDistMeters = sqrt((30.0 * calc.txPowerWatts * 10.0.pow(calc.gainDbi / 10.0)) / (4.0 * Math.PI * 10.0)).coerceAtLeast(0.45)
+                val windSurvivalKmh = (165.0 - calc.elementCount * 4.2 - calc.wireDiameterMm * 0.8).coerceIn(95.0, 180.0)
+                Text(
+                    text = String.format(
+                        "• ЭИИМ (ERP): %.0f Вт  |  Мин. безопасная зона ВЧ-излучения (СанПиН/ICNIRP): %.2f м\n• Расчётная ветровая устойчивость конструкции: до %.0f км/ч (гололёд до 5 мм)",
+                        eirpWatts,
+                        safeDistMeters,
+                        windSurvivalKmh
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // 8. Export to PDF & Save to Cloud Action Row
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -479,14 +842,14 @@ fun CalculatorAndBlueprintTab(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Экспорт документации и облачное сохранение профиля",
+                    text = "Экспорт документации и сохранение профиля",
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = profileNameInput,
                     onValueChange = { profileNameInput = it },
-                    label = { Text("Название профиля для сохранения в облако (опционально)") },
+                    label = { Text("Название профиля для сохранения (опционально)") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("input_profile_name"),
@@ -525,7 +888,7 @@ fun CalculatorAndBlueprintTab(
                     ) {
                         Icon(Icons.Default.CloudUpload, contentDescription = "Save Cloud")
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("В облако", fontWeight = FontWeight.Bold)
+                        Text("Сохранить", fontWeight = FontWeight.Bold)
                     }
                 }
             }

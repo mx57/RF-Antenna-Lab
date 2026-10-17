@@ -144,6 +144,9 @@ fun RfLabWorkspaceScreen(
 
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val calcResult by viewModel.calculationResult.collectAsStateWithLifecycle()
+    val synthesisGoal by viewModel.synthesisGoal.collectAsStateWithLifecycle()
+    val maxSpanLimitMeters by viewModel.maxSpanLimitMeters.collectAsStateWithLifecycle()
+    val synthesizedBlueprint by viewModel.synthesizedBlueprint.collectAsStateWithLifecycle()
     val vnaOptResult by viewModel.vnaOptimizationResult.collectAsStateWithLifecycle()
     val measResMhz by viewModel.measuredResonanceMhz.collectAsStateWithLifecycle()
     val measR by viewModel.measuredR.collectAsStateWithLifecycle()
@@ -181,7 +184,7 @@ fun RfLabWorkspaceScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = if (userEmail != null) "Облако: $userEmail" else "Автономный режим • САПР антенн, VNA и SDR",
+                            text = if (userEmail != null) "Облако: $userEmail" else "Автономный режим • 3D САПР, 26 антенн, VNA и SDR",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.secondary,
                             maxLines = 1,
@@ -233,7 +236,7 @@ fun RfLabWorkspaceScreen(
                     selected = selectedTab == MainWorkspaceTab.CALCULATOR,
                     onClick = { viewModel.selectTab(MainWorkspaceTab.CALCULATOR) },
                     icon = { Icon(Icons.Default.SettingsInputAntenna, contentDescription = "Калькулятор") },
-                    label = { Text("Чертёж", maxLines = 1) },
+                    label = { Text("3D Чертёж", maxLines = 1) },
                     modifier = Modifier.testTag("nav_tab_calculator")
                 )
                 NavigationBarItem(
@@ -302,9 +305,16 @@ fun RfLabWorkspaceScreen(
                     MainWorkspaceTab.CALCULATOR -> {
                         CalculatorAndBlueprintTab(
                             calc = calcResult,
+                            synthesisGoal = synthesisGoal,
+                            maxSpanLimitMeters = maxSpanLimitMeters,
+                            synthesizedBlueprint = synthesizedBlueprint,
                             onSelectAntennaType = viewModel::updateAntennaType,
                             onApplyBandPreset = viewModel::applyBandPreset,
                             onUpdateParameters = viewModel::updateParameters,
+                            onUpdateSynthesisConfig = viewModel::updateSynthesisConfig,
+                            onSynthesizeNewTopology = viewModel::synthesizeNewAntennaTopology,
+                            onClearSynthesizedBlueprint = viewModel::clearSynthesizedBlueprint,
+                            onSaveSynthesizedToProfiles = viewModel::saveSynthesizedBlueprintToProfiles,
                             onExportPdf = { viewModel.exportAndSharePdf(context) },
                             onSaveProfileToCloud = viewModel::saveCurrentProfileToCloud
                         )
