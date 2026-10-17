@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer RF Radiation Waves (Cyan) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF00E5FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M33,40 C26,47 26,61 33,68" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF00E5FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M75,40 C82,47 82,61 75,68" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M26,33 C15,44 15,64 26,75" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M82,33 C93,44 93,64 82,75" />
+
+    <!-- Bold Yagi-Uda Antenna Silhouette & Mast (White & Amber) -->
+    <!-- Vertical Mast -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M51.5,26h5v56h-5z" />
+    <!-- Reflector (Bottom wide element) -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M34,68h40v4.5h-40z" />
+    <!-- Driven Element (Middle split dipole with feed point) -->
+    <path
+        android:fillColor="#FF00E5FF"
+        android:pathData="M37,52h14v4.5h-14z M57,52h14v4.5h-14z" />
+    <!-- Director 1 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M41,38h26v4h-26z" />
+    <!-- Director 2 (Top narrow element) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M45,26h18v3.8h-18z" />
+    <!-- Central Feedpoint Beacon -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M54,54.2m-4.2,0a4.2,4.2 0 1,1 8.4,0a4.2,4.2 0 1,1 -8.4,0" />
+</vector>

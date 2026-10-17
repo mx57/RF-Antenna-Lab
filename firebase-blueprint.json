@@ -1,0 +1,232 @@
+{
+  "entities": {
+    "AntennaProfile": {
+      "title": "AntennaProfile",
+      "description": "Saved amateur radio antenna calculation, geometry, and optimization profile owned by a user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Profile display name."
+        },
+        "antennaType": {
+          "type": "string",
+          "description": "Antenna topology code (e.g. DIPOLE, YAGI, GP, MAG_LOOP, DISCONE, LPDA, QUAD, HELICAL, ELF_LOOP)."
+        },
+        "frequencyMhz": {
+          "type": "number",
+          "description": "Design center frequency in MHz (from 1e-6 MHz = 1 Hz up to 6000 MHz = 6 GHz)."
+        },
+        "wireDiameterMm": {
+          "type": "number",
+          "description": "Conductor or element diameter in millimeters."
+        },
+        "mastHeightM": {
+          "type": "number",
+          "description": "Installation height above ground in meters."
+        },
+        "elementCount": {
+          "type": "integer",
+          "description": "Number of elements for multi-element arrays."
+        },
+        "velocityFactor": {
+          "type": "number",
+          "description": "Conductor velocity factor (0.5 to 1.0)."
+        },
+        "calculatedSwr": {
+          "type": "number",
+          "description": "Calculated or VNA-optimized SWR at center frequency."
+        },
+        "gainDbi": {
+          "type": "number",
+          "description": "Estimated antenna forward gain in dBi."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Engineering notes and tuning instructions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "antennaType",
+        "frequencyMhz",
+        "wireDiameterMm",
+        "mastHeightM",
+        "elementCount",
+        "velocityFactor",
+        "calculatedSwr",
+        "gainDbi",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "VnaMeasurement": {
+      "title": "VnaMeasurement",
+      "description": "Captured VNA / SDR sweep and automated antenna geometry optimization record.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID."
+        },
+        "deviceName": {
+          "type": "string",
+          "description": "Instrument name (e.g., Arinst V2D, Malachite DSP2, NanoVNA-H4)."
+        },
+        "connectionType": {
+          "type": "string",
+          "description": "Transport used (USB_OTG, BLUETOOTH, IMPORT_S1P)."
+        },
+        "targetFreqMhz": {
+          "type": "number",
+          "description": "Target design frequency in MHz."
+        },
+        "measuredResonanceMhz": {
+          "type": "number",
+          "description": "Measured resonant frequency in MHz."
+        },
+        "measuredSwr": {
+          "type": "number",
+          "description": "Measured minimum SWR."
+        },
+        "measuredR": {
+          "type": "number",
+          "description": "Measured series resistance R in Ohms."
+        },
+        "measuredX": {
+          "type": "number",
+          "description": "Measured reactance X in Ohms."
+        },
+        "recommendation": {
+          "type": "string",
+          "description": "Automated geometry trim/extend and LC matching network recommendation."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "deviceName",
+        "connectionType",
+        "targetFreqMhz",
+        "measuredResonanceMhz",
+        "measuredSwr",
+        "measuredR",
+        "measuredX",
+        "recommendation",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomPlugin": {
+      "title": "CustomPlugin",
+      "description": "User-defined or third-party extension plugin for custom RF calculations, receiver protocols, or antenna formulas.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Plugin display title."
+        },
+        "author": {
+          "type": "string",
+          "description": "Plugin author callsign or name."
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version string."
+        },
+        "category": {
+          "type": "string",
+          "description": "Plugin category (CABLE_LOSS, RECEIVER_DRIVER, ANTENNA_FORMULA, MATCHING_NETWORK)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the plugin and its parameters."
+        },
+        "formulaExpression": {
+          "type": "string",
+          "description": "Executable DSL formula or protocol script."
+        },
+        "inputSchemaJson": {
+          "type": "string",
+          "description": "Parameter definitions in compact format."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the plugin is active in the calculator workspace."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "author",
+        "version",
+        "category",
+        "description",
+        "formulaExpression",
+        "inputSchemaJson",
+        "enabled",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/antenna_profiles/{profileId}": {
+      "schema": {
+        "$ref": "#/entities/AntennaProfile"
+      },
+      "description": "User-saved antenna calculation and optimization profiles."
+    },
+    "/vna_measurements/{measurementId}": {
+      "schema": {
+        "$ref": "#/entities/VnaMeasurement"
+      },
+      "description": "User-captured VNA sweeps and automated tuning logs."
+    },
+    "/custom_plugins/{pluginId}": {
+      "schema": {
+        "$ref": "#/entities/CustomPlugin"
+      },
+      "description": "User-installed and custom-authored RF plugins."
+    }
+  }
+}

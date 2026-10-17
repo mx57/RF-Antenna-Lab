@@ -1,0 +1,6 @@
+{
+  "name": "RF Antenna Lab",
+  "description": "Профессиональный инженерный калькулятор антенн (1 Гц – 6 ГГц), синтезатор согласования по VNA, анализатор спектра SDR (Arinst V2D, Малахит, NanoVNA) с чертежами, PDF-экспортом и облачной синхронизацией.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

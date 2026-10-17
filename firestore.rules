@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 3. Entity Validation Helpers (Pillar 2: Validation Blueprints)
+    function isValidAntennaProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.antennaType is string && data.antennaType.size() >= 1 && data.antennaType.size() <= 40 &&
+             (data.frequencyMhz is number) && data.frequencyMhz >= 0.000001 && data.frequencyMhz <= 6000.0 &&
+             (data.wireDiameterMm is number) && data.wireDiameterMm >= 0.01 && data.wireDiameterMm <= 500.0 &&
+             (data.mastHeightM is number) && data.mastHeightM >= 0.1 && data.mastHeightM <= 500.0 &&
+             data.elementCount is int && data.elementCount >= 1 && data.elementCount <= 64 &&
+             (data.velocityFactor is number) && data.velocityFactor >= 0.1 && data.velocityFactor <= 1.0 &&
+             (data.calculatedSwr is number) && data.calculatedSwr >= 1.0 && data.calculatedSwr <= 100.0 &&
+             (data.gainDbi is number) && data.gainDbi >= -50.0 && data.gainDbi <= 60.0 &&
+             data.notes is string && data.notes.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidVnaMeasurement(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.deviceName is string && data.deviceName.size() >= 1 && data.deviceName.size() <= 100 &&
+             data.connectionType is string && data.connectionType.size() >= 1 && data.connectionType.size() <= 40 &&
+             (data.targetFreqMhz is number) && data.targetFreqMhz >= 0.000001 && data.targetFreqMhz <= 6000.0 &&
+             (data.measuredResonanceMhz is number) && data.measuredResonanceMhz >= 0.000001 && data.measuredResonanceMhz <= 6000.0 &&
+             (data.measuredSwr is number) && data.measuredSwr >= 1.0 && data.measuredSwr <= 100.0 &&
+             (data.measuredR is number) && data.measuredR >= 0.0 && data.measuredR <= 10000.0 &&
+             (data.measuredX is number) && data.measuredX >= -10000.0 && data.measuredX <= 10000.0 &&
+             data.recommendation is string && data.recommendation.size() >= 1 && data.recommendation.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCustomPlugin(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.author is string && data.author.size() >= 1 && data.author.size() <= 80 &&
+             data.version is string && data.version.size() >= 1 && data.version.size() <= 30 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 1500 &&
+             data.formulaExpression is string && data.formulaExpression.size() >= 1 && data.formulaExpression.size() <= 2000 &&
+             data.inputSchemaJson is string && data.inputSchemaJson.size() <= 2000 &&
+             data.enabled is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 4. Collection: /antenna_profiles/{profileId}
+    match /antenna_profiles/{profileId} {
+      allow get: if isSignedIn() && isValidId(profileId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(profileId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'antennaType', 'frequencyMhz', 'wireDiameterMm',
+                         'mastHeightM', 'elementCount', 'velocityFactor', 'calculatedSwr',
+                         'gainDbi', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'antennaType', 'frequencyMhz', 'wireDiameterMm',
+                         'mastHeightM', 'elementCount', 'velocityFactor', 'calculatedSwr',
+                         'gainDbi', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidAntennaProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(profileId) &&
+                       isValidAntennaProfile(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'name', 'antennaType', 'frequencyMhz', 'wireDiameterMm',
+                         'mastHeightM', 'elementCount', 'velocityFactor', 'calculatedSwr',
+                         'gainDbi', 'notes', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(profileId) && existing().userId == request.auth.uid;
+    }
+
+    // 5. Collection: /vna_measurements/{measurementId}
+    match /vna_measurements/{measurementId} {
+      allow get: if isSignedIn() && isValidId(measurementId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(measurementId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'deviceName', 'connectionType', 'targetFreqMhz',
+                         'measuredResonanceMhz', 'measuredSwr', 'measuredR', 'measuredX',
+                         'recommendation', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'deviceName', 'connectionType', 'targetFreqMhz',
+                         'measuredResonanceMhz', 'measuredSwr', 'measuredR', 'measuredX',
+                         'recommendation', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidVnaMeasurement(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(measurementId) &&
+                       isValidVnaMeasurement(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'deviceName', 'connectionType', 'targetFreqMhz',
+                         'measuredResonanceMhz', 'measuredSwr', 'measuredR', 'measuredX',
+                         'recommendation', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(measurementId) && existing().userId == request.auth.uid;
+    }
+
+    // 6. Collection: /custom_plugins/{pluginId}
+    match /custom_plugins/{pluginId} {
+      allow get: if isSignedIn() && isValidId(pluginId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(pluginId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'author', 'version', 'category',
+                         'description', 'formulaExpression', 'inputSchemaJson',
+                         'enabled', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'author', 'version', 'category',
+                         'description', 'formulaExpression', 'inputSchemaJson',
+                         'enabled', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCustomPlugin(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(pluginId) &&
+                       isValidCustomPlugin(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'name', 'author', 'version', 'category',
+                         'description', 'formulaExpression', 'inputSchemaJson',
+                         'enabled', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(pluginId) && existing().userId == request.auth.uid;
+    }
+  }
+}
